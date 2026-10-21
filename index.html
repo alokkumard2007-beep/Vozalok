@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Voyz Automation Panel</title>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #0a0e1a;
+            color: #e0e0e0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .container { display: flex; height: 100vh; gap: 10px; padding: 10px; }
+        .sidebar {
+            width: 300px; background: #141b2d; border-radius: 12px; padding: 15px;
+            display: flex; flex-direction: column; gap: 10px; overflow-y: auto; flex-shrink: 0;
+        }
+        .main { flex: 1; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+        .top-row { display: flex; gap: 10px; height: 50%; }
+        .bottom-row { display: flex; gap: 10px; height: 50%; }
+        .panel {
+            background: #141b2d; border-radius: 12px; padding: 15px; overflow-y: auto; flex: 1;
+        }
+        .panel-title {
+            font-size: 12px; text-transform: uppercase; color: #6b7a9f;
+            margin-bottom: 10px; font-weight: bold; letter-spacing: 1px;
+        }
+        .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .stat-card {
+            background: #1a2338; border-radius: 8px; padding: 12px; text-align: center;
+        }
+        .stat-value { font-size: 22px; font-weight: bold; color: #fff; }
+        .stat-label { font-size: 11px; color: #6b7a9f; margin-top: 4px; }
+        .stat-value.success { color: #4ade80; }
+        .stat-value.failed { color: #f87171; }
+        .stat-value.info { color: #60a5fa; }
+        .stat-value.yellow { color: #fbbf24; }
+
+        .btn {
+            padding: 8px 14px; border: none; border-radius: 6px; font-weight: bold;
+            cursor: pointer; transition: all 0.2s; font-size: 13px;
+        }
+        .btn:hover { opacity: 0.85; transform: scale(0.98); }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-start { background: #22c55e; color: #fff; }
+        .btn-stop { background: #ef4444; color: #fff; }
+        .btn-primary { background: #3b82f6; color: #fff; }
+        .btn-success { background: #22c55e; color: #fff; }
+        .btn-danger { background: #ef4444; color: #fff; }
+        .btn-warning { background: #f59e0b; color: #fff; }
+        .btn-secondary { background: #4b5563; color: #fff; }
+        .btn-sm { padding: 4px 10px; font-size: 11px; }
+        .btn-xs { padding: 2px 6px; font-size: 10px; }
+
+        .logs-container {
+            height: 100%; overflow-y: auto; font-family: 'Courier New', monospace;
+            font-size: 12px; line-height: 1.6; background: #0a0e1a; border-radius: 8px; padding: 8px;
+        }
+        .log-entry { padding: 2px 0; border-bottom: 1px solid rgba(255,255,255,0.03); }
+        .log-entry .time { color: #6b7a9f; margin-right: 8px; }
+        .log-entry .msg { color: #c8d0e0; }
+        .log-entry .success { color: #4ade80; }
+        .log-entry .error { color: #f87171; }
+        .log-entry .warning { color: #fbbf24; }
+        .log-entry .info { color: #60a5fa; }
+
+        .status-indicator {
+            display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px;
+        }
+        .status-indicator.running { background: #4ade80; animation: pulse 1s infinite; }
+        .status-indicator.stopped { background: #6b7a9f; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+        .controls { display: flex; gap: 8px; flex-wrap: wrap; }
+        .flex { display: flex; }
+        .justify-between { justify-content: space-between; }
+        .items-center { align-items: center; }
+        .mt-2 { margin-top: 8px; }
+        .mb-2 { margin-bottom: 8px; }
+        .w-full { width: 100%; }
+
+        .scrollbar::-webkit-scrollbar { width: 4px; }
+        .scrollbar::-webkit-scrollbar-track { background: #0a0e1a; }
+        .scrollbar::-webkit-scrollbar-thumb { background: #1a2338; border-radius: 2px; }
+
+        textarea, input[type=text], input[type=number] {
+            width: 100%; padding: 8px; border-radius: 4px; border: 1px solid #1a2338;
+            background: #0a0e1a; color: #e0e0e0; font-size: 12px; font-family: monospace;
+        }
+        textarea { resize: vertical; min-height: 60px; }
+        textarea:focus, input:focus { outline: none; border-color: #3b82f6; }
+        label { font-size: 12px; color: #6b7a9f; display: block; margin-bottom: 4px; }
+
+        .db-list, .account-list { font-size: 12px; max-height: 180px; overflow-y: auto; }
+        .db-item, .account-item {
+            padding: 6px 8px; margin: 3px 0; border-radius: 6px;
+            display: flex; justify-content: space-between; align-items: center;
+            background: #0a0e1a; gap: 6px; flex-wrap: wrap;
+        }
+        .db-item.active { background: rgba(59,130,246,0.2); border-left: 3px solid #3b82f6; }
+        .db-url, .acc-phone { font-size: 11px; color: #c8d0e0; word-break: break-all; flex: 1; font-family: monospace; }
+        .acc-meta { font-size: 10px; color: #6b7a9f; }
+        .badge {
+            font-size: 10px; padding: 1px 8px; border-radius: 10px; font-weight: bold;
+        }
+        .badge.ok { background: rgba(74,222,128,0.3); color: #4ade80; }
+        .badge.wd { background: rgba(251,191,36,0.3); color: #fbbf24; }
+
+        .number-list { display: flex; flex-wrap: wrap; gap: 4px; }
+        .number-chip {
+            background: #1a2338; padding: 2px 8px; border-radius: 12px;
+            font-size: 11px; font-family: monospace;
+        }
+        .number-chip.success { background: rgba(74,222,128,0.2); color: #4ade80; }
+
+        .modal-bg {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7);
+            z-index: 1000; align-items: center; justify-content: center;
+        }
+        .modal-bg.show { display: flex; }
+        .modal {
+            background: #141b2d; border-radius: 12px; padding: 20px; width: 90%; max-width: 480px;
+            border: 1px solid #1a2338;
+        }
+        .modal h3 { margin-bottom: 12px; color: #fbbf24; }
+        .modal .actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
+
+        @media (max-width: 900px) {
+            .container { flex-direction: column; }
+            .sidebar { width: 100%; height: 40vh; }
+            .top-row, .bottom-row { flex-direction: column; height: auto; }
+            .panel { min-height: 220px; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Sidebar -->
+        <div class="sidebar scrollbar">
+            <div>
+                <h2 style="color:#fbbf24;font-size:20px;">⚡ Voyz Panel</h2>
+                <div style="font-size:12px;color:#6b7a9f;">Account + Survey Automation</div>
+            </div>
+
+            <div>
+                <label>Referral Code (used for new signups)</label>
+                <input type="text" id="refInput" placeholder="e.g. VS6K3T" value="VS6K3T">
+            </div>
+            <div>
+                <label>Target accounts</label>
+                <input type="number" id="targetInput" value="10" min="1">
+            </div>
+
+            <!-- NextCaptcha Key (panel se change) -->
+            <div>
+                <label>NextCaptcha Key</label>
+                <input type="text" id="captchaKeyInput" placeholder="next_xxxxxxxxxxxx">
+                <div class="controls mt-2">
+                    <button class="btn btn-primary btn-sm" id="btnSaveKey" style="flex:1;">💾 Save Key</button>
+                    <button class="btn btn-secondary btn-sm" id="btnResetKey">↺ Default</button>
+                </div>
+                <div style="font-size:11px;color:#6b7a9f;margin-top:4px;" id="keyStatus">Loading…</div>
+            </div>
+
+            <div class="controls">
+                <button class="btn btn-start" id="btnRun">▶ Run</button>
+                <button class="btn btn-primary" id="btnCreate">➕ Create Accounts</button>
+                <button class="btn btn-stop" id="btnStop" disabled>⏹ Stop</button>
+            </div>
+
+            <div class="stat-grid">
+                <div class="stat-card"><div class="stat-value info" id="statProcessed">0</div><div class="stat-label">📱 Processed</div></div>
+                <div class="stat-card"><div class="stat-value success" id="statSuccess">0</div><div class="stat-label">✅ Success</div></div>
+                <div class="stat-card"><div class="stat-value failed" id="statFailed">0</div><div class="stat-label">❌ Failed</div></div>
+                <div class="stat-card"><div class="stat-value yellow" id="statNoOtp">0</div><div class="stat-label">⏰ No OTP</div></div>
+            </div>
+
+            <div style="font-size:13px;">
+                <div class="flex justify-between"><span>📡 Status</span>
+                    <span><span class="status-indicator stopped" id="statusIndicator"></span><span id="statusText">Stopped</span></span>
+                </div>
+                <div class="flex justify-between"><span>🔑 Active Ref</span><span id="activeRef" style="font-family:monospace;color:#60a5fa;">VS6K3T</span></div>
+                <div class="flex justify-between"><span>🎯 Target</span><span id="activeTarget">10</span></div>
+                <div class="flex justify-between"><span>🔧 Workers</span><span id="statWorkers">0</span></div>
+                <div class="flex justify-between"><span>📋 Queue</span><span id="statQueue">0</span></div>
+            </div>
+
+            <div>
+                <div class="panel-title">📡 Firebase Panels (<span id="panelCount">0</span>)</div>
+                <div class="db-list" id="panelList"><div style="color:#6b7a9f;font-size:12px;">No panels added</div></div>
+                <div class="mt-2">
+                    <textarea id="panelInput" placeholder="Paste Firebase / panel links (one per line)"></textarea>
+                    <div class="controls mt-2">
+                        <button class="btn btn-primary btn-sm" id="btnAddPanels" style="flex:1;">➕ Add Panels</button>
+                        <button class="btn btn-secondary btn-sm" id="btnFetchDevices">📡 Fetch</button>
+                        <button class="btn btn-danger btn-sm" id="btnClearPanels">🗑️</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main -->
+        <div class="main">
+            <div class="top-row">
+                <div class="panel">
+                    <div class="panel-title">💾 Saved Accounts</div>
+                    <div class="account-list scrollbar" id="accountList">
+                        <div style="color:#6b7a9f;font-size:12px;">No saved accounts yet. Use Create Accounts or Run.</div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <div class="panel-title">📱 Recent Numbers</div>
+                    <div class="number-list" id="numberList"></div>
+                    <div class="panel-title mt-2">🕒 Recent Activity</div>
+                    <div id="recentList" style="font-size:12px;"></div>
+                </div>
+            </div>
+            <div class="bottom-row">
+                <div class="panel" style="display:flex;flex-direction:column;">
+                    <div class="flex justify-between items-center mb-2">
+                        <div class="panel-title" style="margin:0;">📜 Live Logs</div>
+                        <button class="btn btn-secondary btn-xs" id="btnClearLogs">Clear</button>
+                    </div>
+                    <div class="logs-container scrollbar" id="logsContainer"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Create Accounts Modal -->
+    <div class="modal-bg" id="createModal">
+        <div class="modal">
+            <h3>➕ Create Accounts</h3>
+            <p style="font-size:12px;color:#6b7a9f;margin-bottom:10px;">
+                Paste a Firebase / panel link. Accounts will be registered using the active referral code and saved to disk.
+            </p>
+            <label>Panel link</label>
+            <textarea id="createPanelInput" rows="3" placeholder="https://xxx.firebaseio.com/  or panel link with ?s=..."></textarea>
+            <label class="mt-2">How many accounts?</label>
+            <input type="number" id="createTarget" value="5" min="1">
+            <div class="actions">
+                <button class="btn btn-secondary" id="btnCreateCancel">Cancel</button>
+                <button class="btn btn-success" id="btnCreateConfirm">Start Creating</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Messages Modal -->
+    <div class="modal-bg" id="messagesModal">
+        <div class="modal" style="max-width:520px;">
+            <div class="flex justify-between items-center" style="margin-bottom:12px;">
+                <h3 id="messagesTitle" style="margin:0;color:#fbbf24;">Messages</h3>
+                <button class="btn btn-secondary btn-xs" onclick="closeMessagesModal()">✕ Close</button>
+            </div>
+            <div id="messagesBody" style="max-height:60vh;overflow-y:auto;"></div>
+        </div>
+    </div>
+
+    <!-- Withdraw Amount Modal -->
+    <div class="modal-bg" id="withdrawModal">
+        <div class="modal" style="max-width:400px;">
+            <h3 style="margin-bottom:8px;">💸 Withdraw</h3>
+            <p style="font-size:12px;color:#6b7a9f;margin-bottom:10px;" id="withdrawPhoneLabel"></p>
+            <label>Select amount (₹)</label>
+            <div id="withdrawAmountOptions" style="display:flex;flex-wrap:wrap;gap:8px;margin:10px 0;">
+                <button type="button" class="btn btn-secondary amt-btn" data-amt="5">₹5</button>
+                <button type="button" class="btn btn-secondary amt-btn" data-amt="20">₹20</button>
+                <button type="button" class="btn btn-secondary amt-btn" data-amt="50">₹50</button>
+                <button type="button" class="btn btn-secondary amt-btn" data-amt="100">₹100</button>
+            </div>
+            <label>Or enter custom amount</label>
+            <input type="number" id="withdrawAmountInput" min="1" value="5" placeholder="Amount">
+            <p style="font-size:11px;color:#6b7a9f;margin-top:8px;">OTP is fetched automatically. Expired sessions re-login with saved password.</p>
+            <div class="actions">
+                <button class="btn btn-secondary" onclick="closeWithdrawModal()">Cancel</button>
+                <button class="btn btn-warning" id="btnWithdrawConfirm">Confirm Withdraw</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const socket = io();
+        let currentAccounts = [];
+        let pendingWithdrawPhone = null;
+
+        function addLog(log) {
+            const c = document.getElementById('logsContainer');
+            const el = document.createElement('div');
+            el.className = 'log-entry';
+            const t = log.timestamp || new Date().toLocaleTimeString();
+            const cls = log.type || 'info';
+            el.innerHTML = `<span class="time">${t}</span><span class="msg ${cls}">${log.message}</span>`;
+            c.appendChild(el);
+            c.scrollTop = c.scrollHeight;
+            while (c.children.length > 400) c.removeChild(c.firstChild);
+        }
+
+        function updateUI(data) {
+            document.getElementById('statProcessed').textContent = data.processed || 0;
+            document.getElementById('statSuccess').textContent = data.success_count || 0;
+            document.getElementById('statFailed').textContent = data.failed_count || 0;
+            document.getElementById('statNoOtp').textContent = data.no_otp_count || 0;
+            document.getElementById('statWorkers').textContent = data.active_workers || 0;
+            document.getElementById('statQueue').textContent = data.queue_size || 0;
+            document.getElementById('activeRef').textContent = data.referral_code || '-';
+            document.getElementById('activeTarget').textContent = data.target || 0;
+            document.getElementById('refInput').value = data.referral_code || '';
+            document.getElementById('targetInput').value = data.target || 10;
+
+            const ind = document.getElementById('statusIndicator');
+            const st = document.getElementById('statusText');
+            if (data.running) {
+                ind.className = 'status-indicator running';
+                st.textContent = data.mode === 'create' ? 'Creating…' : 'Running…';
+                document.getElementById('btnRun').disabled = true;
+                document.getElementById('btnCreate').disabled = true;
+                document.getElementById('btnStop').disabled = false;
+            } else {
+                ind.className = 'status-indicator stopped';
+                st.textContent = 'Stopped';
+                document.getElementById('btnRun').disabled = false;
+                document.getElementById('btnCreate').disabled = false;
+                document.getElementById('btnStop').disabled = true;
+            }
+
+            const panels = data.panels || [];
+            document.getElementById('panelCount').textContent = panels.length;
+            const pl = document.getElementById('panelList');
+            if (!panels.length) {
+                pl.innerHTML = '<div style="color:#6b7a9f;font-size:12px;">No panels added</div>';
+            } else {
+                pl.innerHTML = panels.map((u, i) => `
+                    <div class="db-item ${i === data.current_panel_idx ? 'active' : ''}">
+                        <span class="db-url">${i+1}. ${u.substring(0,55)}${u.length>55?'…':''}</span>
+                        <button class="btn btn-danger btn-xs" onclick="deletePanel(${i})">✕</button>
+                    </div>`).join('');
+            }
+
+            const nl = document.getElementById('numberList');
+            const nums = data.numbers_found || [];
+            nl.innerHTML = nums.slice(-20).map(n => `<span class="number-chip success">${n}</span>`).join('');
+
+            const rl = document.getElementById('recentList');
+            const recent = data.recent_accounts || [];
+            rl.innerHTML = recent.slice().reverse().slice(0, 10).map(a => `
+                <div style="padding:3px 0;border-bottom:1px solid rgba(255,255,255,0.05);display:flex;justify-content:space-between;">
+                    <span style="font-family:monospace;">📱 ${a.phone}</span>
+                    <span class="badge ok">${a.status || ''}</span>
+                    <span style="color:#6b7a9f;font-size:10px;">${a.time || ''}</span>
+                </div>`).join('');
+        }
+
+        function renderAccounts(accounts) {
+            currentAccounts = accounts || [];
+            const el = document.getElementById('accountList');
+            if (!currentAccounts.length) {
+                el.innerHTML = '<div style="color:#6b7a9f;font-size:12px;">No saved accounts yet.</div>';
+                return;
+            }
+            el.innerHTML = currentAccounts.map(a => {
+                const ref = a.own_referral_code || a.referral_code || '-';
+                const wdBtn = a.can_withdraw
+                    ? `<button class="btn btn-warning btn-xs" onclick="withdrawAccount('${a.phone}')">💸 Withdraw</button>`
+                    : '';
+                return `
+                <div class="account-item">
+                    <div style="flex:1;min-width:120px;">
+                        <div class="acc-phone">📱 ${a.phone}</div>
+                        <div class="acc-meta">Ref: <b style="color:#60a5fa">${ref}</b>
+                            ${a.can_withdraw ? '<span class="badge wd">ready</span>' : ''}
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+                        <button class="btn btn-primary btn-xs" onclick="useAccount('${a.phone}')">Use</button>
+                        <button class="btn btn-secondary btn-xs" onclick="showMessages('${a.phone}')">💬 Messages</button>
+                        ${wdBtn}
+                        <button class="btn btn-danger btn-xs" onclick="deleteAccount('${a.phone}')">Delete</button>
+                    </div>
+                </div>`;
+            }).join('');
+        }
+
+        async function saveConfig() {
+            const target = parseInt(document.getElementById('targetInput').value) || 10;
+            const referral_code = document.getElementById('refInput').value.trim();
+            await fetch('/api/config', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ target, referral_code })
+            });
+        }
+
+        async function deletePanel(index) {
+            await fetch('/api/panels/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ index })
+            });
+        }
+
+        async function useAccount(phone) {
+            const resp = await fetch('/api/accounts/use', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ phone })
+            });
+            const data = await resp.json();
+            if (data.success) {
+                document.getElementById('refInput').value = data.referral_code;
+                alert('Active referral set to: ' + data.referral_code);
+            } else {
+                alert(data.error || 'Failed');
+            }
+        }
+
+        async function deleteAccount(phone) {
+            if (!confirm('Delete account ' + phone + '?')) return;
+            await fetch('/api/accounts/delete', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ phone })
+            });
+        }
+
+        function withdrawAccount(phone) {
+            pendingWithdrawPhone = phone;
+            document.getElementById('withdrawPhoneLabel').textContent = 'Account: ' + phone;
+            document.getElementById('withdrawAmountInput').value = '5';
+            document.querySelectorAll('.amt-btn').forEach(b => {
+                b.classList.remove('btn-warning');
+                b.classList.add('btn-secondary');
+            });
+            document.getElementById('withdrawModal').classList.add('show');
+        }
+
+        function closeWithdrawModal() {
+            document.getElementById('withdrawModal').classList.remove('show');
+            pendingWithdrawPhone = null;
+        }
+
+        document.addEventListener('click', function(e) {
+            if (e.target.classList.contains('amt-btn')) {
+                const amt = e.target.getAttribute('data-amt');
+                document.getElementById('withdrawAmountInput').value = amt;
+                document.querySelectorAll('.amt-btn').forEach(b => {
+                    b.classList.remove('btn-warning');
+                    b.classList.add('btn-secondary');
+                });
+                e.target.classList.remove('btn-secondary');
+                e.target.classList.add('btn-warning');
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', function() {
+            const conf = document.getElementById('btnWithdrawConfirm');
+            if (conf) {
+                conf.addEventListener('click', async function() {
+                    const phone = pendingWithdrawPhone;
+                    const amount = parseInt(document.getElementById('withdrawAmountInput').value, 10);
+                    if (!phone) return;
+                    if (!amount || amount < 1) {
+                        alert('Enter a valid amount');
+                        return;
+                    }
+                    closeWithdrawModal();
+                    const resp = await fetch('/api/accounts/withdraw', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({ phone, amount })
+                    });
+                    const data = await resp.json();
+                    if (!data.success) alert(data.error || 'Failed to start withdraw');
+                });
+            }
+        });
+
+        async function showMessages(phone) {
+            const modal = document.getElementById('messagesModal');
+            const title = document.getElementById('messagesTitle');
+            const body  = document.getElementById('messagesBody');
+            title.textContent = 'Messages — ' + phone;
+            body.innerHTML = '<div style="color:#6b7a9f;padding:12px;">Loading last 5 messages…</div>';
+            modal.classList.add('show');
+            try {
+                const resp = await fetch('/api/accounts/messages', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ phone })
+                });
+                const data = await resp.json();
+                if (!data.success) {
+                    body.innerHTML = `<div style="color:#f87171;padding:12px;">${data.error || 'Failed'}</div>`;
+                    return;
+                }
+
+                let header = `
+                    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+                        <span style="font-size:11px;color:#6b7a9f;">${(data.messages || []).length} recent message(s)</span>
+                        <button class="btn btn-danger btn-xs" onclick="deleteAllMessages('${phone}')">🔥 Delete All</button>
+                    </div>`;
+
+                if (!data.messages || !data.messages.length) {
+                    body.innerHTML = header + '<div style="color:#6b7a9f;padding:12px;">No messages found on this device.</div>';
+                    return;
+                }
+
+                body.innerHTML = header + data.messages.map(m => `
+                    <div style="background:#0a0e1a;border-radius:8px;padding:10px;margin-bottom:8px;border-left:3px solid #3b82f6;position:relative;">
+                        <div style="display:flex;justify-content:space-between;margin-bottom:4px;padding-right:26px;">
+                            <span style="color:#60a5fa;font-size:11px;font-weight:bold;">${escapeHtml(m.sender || 'Unknown')}</span>
+                            <span style="color:#6b7a9f;font-size:10px;">${escapeHtml(String(m.timestamp || ''))}</span>
+                        </div>
+                        <div style="font-size:12px;color:#e0e0e0;white-space:pre-wrap;word-break:break-word;">${escapeHtml(m.text || '')}</div>
+                        <button class="btn btn-danger btn-xs"
+                                style="position:absolute;top:8px;right:8px;"
+                                onclick="deleteOneMessage('${phone}','${m.key || m.timestamp}')">✕</button>
+                    </div>
+                `).join('');
+            } catch (e) {
+                body.innerHTML = `<div style="color:#f87171;padding:12px;">Error: ${e}</div>`;
+            }
+        }
+
+        async function deleteOneMessage(phone, msgKey) {
+            if (!confirm('Delete this message permanently?')) return;
+            try {
+                const r = await fetch('/api/accounts/messages/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ phone, msg_key: msgKey })
+                });
+                const d = await r.json();
+                if (d.success) {
+                    addLog({ message: `🗑 Deleted msg from ${phone}`, type: 'success' });
+                    showMessages(phone);
+                } else {
+                    alert(d.error || 'Delete failed');
+                }
+            } catch (e) {
+                alert('Error: ' + e);
+            }
+        }
+
+        async function deleteAllMessages(phone) {
+            if (!confirm('🔥 Delete ALL messages for ' + phone + '?\nThis cannot be undone.')) return;
+            try {
+                const r = await fetch('/api/accounts/messages/delete-all', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ phone })
+                });
+                const d = await r.json();
+                if (d.success) {
+                    addLog({ message: `🔥 Nuked all messages for ${phone}`, type: 'warning' });
+                    showMessages(phone);
+                } else {
+                    alert(d.error || 'Delete-all failed');
+                }
+            } catch (e) {
+                alert('Error: ' + e);
+            }
+        }
+
+        function escapeHtml(s) {
+            return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        function closeMessagesModal() {
+            document.getElementById('messagesModal').classList.remove('show');
+        }
+
+        // ---------- NextCaptcha key management ----------
+        async function loadKeyStatus() {
+            try {
+                const r = await fetch('/api/settings/key');
+                const d = await r.json();
+                if (d.success) {
+                    document.getElementById('keyStatus').textContent =
+                        `Current: ${d.key_masked} (source: ${d.source})`;
+                }
+            } catch(e) {}
+        }
+
+        socket.on('connect', () => addLog({ message: 'Connected to panel', type: 'success' }));
+        socket.on('log', addLog);
+        socket.on('status', updateUI);
+        socket.on('accounts_updated', (d) => renderAccounts(d.accounts));
+        socket.on('withdraw_result', (d) => {
+            addLog({
+                message: `Withdraw ${d.phone}: ${d.success ? 'SUCCESS' : 'FAILED'} — ${d.message}`,
+                type: d.success ? 'success' : 'error'
+            });
+            if (d.success) alert('Withdraw success: ' + d.phone);
+            else alert('Withdraw failed: ' + d.message);
+        });
+
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                const s = await (await fetch('/api/status')).json();
+                updateUI(s);
+            } catch(e) {}
+            try {
+                const a = await (await fetch('/api/accounts')).json();
+                renderAccounts(a.accounts);
+            } catch(e) {}
+            loadKeyStatus();
+
+            document.getElementById('btnSaveKey').addEventListener('click', async () => {
+                const key = document.getElementById('captchaKeyInput').value.trim();
+                if (!key) { alert('Key daalein'); return; }
+                const r = await fetch('/api/settings/key', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({key})
+                });
+                const d = await r.json();
+                if (d.success) {
+                    alert('Key saved ✅');
+                    document.getElementById('captchaKeyInput').value = '';
+                    loadKeyStatus();
+                } else {
+                    alert(d.error || 'Failed');
+                }
+            });
+
+            document.getElementById('btnResetKey').addEventListener('click', async () => {
+                if (!confirm('Key default par reset karein?')) return;
+                await fetch('/api/settings/key/reset', {method:'POST'});
+                alert('Reset ho gaya');
+                loadKeyStatus();
+            });
+
+            document.getElementById('btnRun').addEventListener('click', async () => {
+                await saveConfig();
+                const resp = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ mode: 'run' })
+                });
+                const data = await resp.json();
+                if (!data.success) alert(data.error || 'Failed to start');
+            });
+
+            document.getElementById('btnCreate').addEventListener('click', () => {
+                document.getElementById('createModal').classList.add('show');
+            });
+            document.getElementById('btnCreateCancel').addEventListener('click', () => {
+                document.getElementById('createModal').classList.remove('show');
+            });
+            document.getElementById('btnCreateConfirm').addEventListener('click', async () => {
+                const link = document.getElementById('createPanelInput').value.trim();
+                const target = parseInt(document.getElementById('createTarget').value) || 5;
+                if (!link) { alert('Paste a panel link'); return; }
+                await fetch('/api/panels/add', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ urls: [link] })
+                });
+                await saveConfig();
+                await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ target })
+                });
+                document.getElementById('createModal').classList.remove('show');
+                const resp = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ mode: 'create', target })
+                });
+                const data = await resp.json();
+                if (!data.success) alert(data.error || 'Failed');
+            });
+
+            document.getElementById('btnStop').addEventListener('click', async () => {
+                await fetch('/api/stop', { method: 'POST' });
+            });
+
+            document.getElementById('btnAddPanels').addEventListener('click', async () => {
+                const text = document.getElementById('panelInput').value.trim();
+                if (!text) { alert('Paste panel links'); return; }
+                const urls = text.split(/[\n,]+/).map(u => u.trim()).filter(Boolean);
+                const resp = await fetch('/api/panels/add', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ urls })
+                });
+                const data = await resp.json();
+                document.getElementById('panelInput').value = '';
+                alert(`Added ${data.added}. Total: ${data.total}`);
+            });
+
+            document.getElementById('btnClearPanels').addEventListener('click', async () => {
+                if (!confirm('Clear all panels?')) return;
+                await fetch('/api/panels/clear', { method: 'POST' });
+            });
+
+            document.getElementById('btnFetchDevices').addEventListener('click', async () => {
+                const resp = await fetch('/api/fetch-devices', { method: 'POST', headers: {'Content-Type':'application/json'}, body: '{}' });
+                const data = await resp.json();
+                if (data.devices) {
+                    alert(`Found ${data.count} devices\n\n` + data.devices.map(d => d.phone).join('\n'));
+                } else {
+                    alert(data.error || 'No devices');
+                }
+            });
+
+            document.getElementById('btnClearLogs').addEventListener('click', () => {
+                document.getElementById('logsContainer').innerHTML = '';
+            });
+
+            document.getElementById('refInput').addEventListener('change', saveConfig);
+            document.getElementById('targetInput').addEventListener('change', saveConfig);
+        });
+    </script>
+</body>
+</html>
