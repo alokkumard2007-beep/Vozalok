@@ -1,5 +1,5 @@
 Flask
 Flask-SocketIO
-eventlet==0.36.3
+eventlet
 gunicorn==25.1.0
 requests
